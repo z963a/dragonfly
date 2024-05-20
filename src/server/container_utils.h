@@ -90,7 +90,7 @@ using BlockingResultCb =
 // The block flag is set to true while the transaction is blocking.
 OpResult<std::string> RunCbOnFirstNonEmptyBlocking(Transaction* trans, int req_obj_type,
                                                    BlockingResultCb cb, unsigned limit_ms,
-                                                   bool* block_flag);
+                                                   bool* block_flag, std::string* info = nullptr);
 
 };  // namespace container_utils
 
