@@ -27,7 +27,7 @@ static uint32_t BucketId(uint64_t hash, uint32_t capacity_log) {
   return hash >> (64 - capacity_log);
 }
 // doesn't possess memory, it should be created and release manually
-class ISLEntry {
+class OAHEntry {
   // we can assume that high 12 bits of user address space
   // can be used for tagging. At most 52 bits of address are reserved for
   // some configurations, and usually it's 48 bits.
@@ -47,9 +47,9 @@ class ISLEntry {
   static constexpr size_t kTagMask = 4095ULL << 52;  // we reserve 12 high bits.
 
  public:
-  ISLEntry() = default;
+  OAHEntry() = default;
 
-  ISLEntry(std::string_view key, uint32_t expiry = UINT32_MAX) {
+  OAHEntry(std::string_view key, uint32_t expiry = UINT32_MAX) {
     uint32_t key_size = key.size();
 
     uint32_t expiry_size = (expiry != UINT32_MAX) * sizeof(expiry);
@@ -80,25 +80,25 @@ class ISLEntry {
   }
 
   // TODO add initializer list constructor
-  ISLEntry(size_t vector_size) {
+  OAHEntry(size_t vector_size) {
     // TODO rewrite to simple array
-    data_ = reinterpret_cast<char*>(new std::vector<ISLEntry>(vector_size));
+    data_ = reinterpret_cast<char*>(new std::vector<OAHEntry>(vector_size));
     SetVectorBit();
   }
 
-  ISLEntry(const ISLEntry& e) = delete;
-  ISLEntry(ISLEntry&& e) {
+  OAHEntry(const OAHEntry& e) = delete;
+  OAHEntry(OAHEntry&& e) {
     data_ = e.data_;
     e.data_ = nullptr;
   }
 
   // consider manual removing, we waste a lot of time to check nullptr
-  inline ~ISLEntry() {
+  inline ~OAHEntry() {
     Clear();
   }
 
-  ISLEntry& operator=(const ISLEntry& e) = delete;
-  ISLEntry& operator=(ISLEntry&& e) {
+  OAHEntry& operator=(const OAHEntry& e) = delete;
+  OAHEntry& operator=(OAHEntry&& e) {
     std::swap(data_, e.data_);
     return *this;
   }
@@ -115,8 +115,8 @@ class ISLEntry {
     return (uptr() & kVectorBit) != 0;
   }
 
-  inline std::vector<ISLEntry>& AsVector() {
-    return *reinterpret_cast<std::vector<ISLEntry>*>(Raw());
+  inline std::vector<OAHEntry>& AsVector() {
+    return *reinterpret_cast<std::vector<OAHEntry>*>(Raw());
   }
 
   inline std::string_view Key() const {
@@ -139,11 +139,11 @@ class ISLEntry {
   }
 
   // TODO consider another option to implement iterator
-  ISLEntry* operator->() {
+  OAHEntry* operator->() {
     return this;
   }
 
-  inline uint64_t GetExtendedHash() const {
+  inline uint64_t GetHash() const {
     return (uptr() & kExtHashShiftedMask) >> kExtHashShift;
   }
 
@@ -154,9 +154,9 @@ class ISLEntry {
     uint32_t bucket_id_hash_part = capacity_log > shift_log ? shift_log : capacity_log;
     uint32_t bucket_mask = (1 << bucket_id_hash_part) - 1;
     bucket_id &= bucket_mask;
-    auto stored_hash = GetExtendedHash();
+    auto stored_hash = GetHash();
     if (!stored_hash) {
-      stored_hash = SetExtendedHash(Hash(Key()), capacity_log, shift_log);
+      stored_hash = SetHash(Hash(Key()), capacity_log, shift_log);
     }
     uint32_t stored_bucket_id = stored_hash >> (kExtHashSize - bucket_id_hash_part);
     return bucket_id == stored_bucket_id;
@@ -168,16 +168,16 @@ class ISLEntry {
     const uint32_t start_hash_bit = capacity_log > shift_log ? capacity_log - shift_log : 0;
     const uint32_t ext_hash_shift = 64 - start_hash_bit - kExtHashSize;
     const uint64_t ext_hash = (hash >> ext_hash_shift) & kExtHashMask;
-    auto stored_hash = GetExtendedHash();
+    auto stored_hash = GetHash();
     if (!stored_hash && !IsVector()) {
-      stored_hash = SetExtendedHash(Hash(Key()), capacity_log, shift_log);
+      stored_hash = SetHash(Hash(Key()), capacity_log, shift_log);
     }
     return stored_hash == ext_hash;
   }
 
   // TODO rename to SetHash
   // shift_log identify which bucket the element belongs to
-  uint64_t SetExtendedHash(uint64_t hash, uint32_t capacity_log, uint32_t shift_log) {
+  uint64_t SetHash(uint64_t hash, uint32_t capacity_log, uint32_t shift_log) {
     DCHECK(!IsVector());
     const uint32_t start_hash_bit = capacity_log > shift_log ? capacity_log - shift_log : 0;
     const uint32_t ext_hash_shift = 64 - start_hash_bit - kExtHashSize;
@@ -195,7 +195,7 @@ class ISLEntry {
   uint32_t Rehash(uint32_t current_bucket_id, uint32_t prev_capacity_log, uint32_t new_capacity_log,
                   uint32_t shift_log) {
     DCHECK(!IsVector());
-    auto stored_hash = GetExtendedHash();
+    auto stored_hash = GetHash();
 
     const uint32_t logs_diff = new_capacity_log - prev_capacity_log;
     const uint32_t prev_significant_bits =
@@ -204,7 +204,7 @@ class ISLEntry {
 
     if (!stored_hash || needed_hash_bits > kExtHashSize) {
       auto hash = Hash(Key());
-      SetExtendedHash(hash, new_capacity_log, shift_log);
+      SetHash(hash, new_capacity_log, shift_log);
       return BucketId(hash, new_capacity_log);
     }
 
@@ -232,7 +232,7 @@ class ISLEntry {
       auto* expiry_pos = Raw();
       std::memcpy(expiry_pos, &at_sec, sizeof(at_sec));
     } else {
-      *this = ISLEntry(Key(), at_sec);
+      *this = OAHEntry(Key(), at_sec);
     }
   }
 
@@ -266,12 +266,12 @@ class ISLEntry {
   }
 
   // TODO refactor, because it's inefficient
-  inline uint32_t Insert(ISLEntry&& e) {
+  inline uint32_t Insert(OAHEntry&& e) {
     if (Empty()) {
       *this = std::move(e);
       return 0;
     } else if (!IsVector()) {
-      ISLEntry tmp(2);
+      OAHEntry tmp(2);
       auto& arr = tmp.AsVector();
       arr[0] = std::move(*this);
       arr[1] = std::move(e);
@@ -300,7 +300,7 @@ class ISLEntry {
   }
 
   // TODO remove, it is inefficient
-  inline ISLEntry& operator[](uint32_t pos) {
+  inline OAHEntry& operator[](uint32_t pos) {
     DCHECK(!Empty());
     if (!IsVector()) {
       DCHECK(pos == 0);
@@ -312,11 +312,11 @@ class ISLEntry {
     }
   }
 
-  ISLEntry Remove(uint32_t pos) {
+  OAHEntry Remove(uint32_t pos) {
     if (Empty()) {
       // I'm not sure that this scenario should be check at all
       DCHECK(pos == 0);
-      return ISLEntry();
+      return OAHEntry();
     } else if (!IsVector()) {
       DCHECK(pos == 0);
       return std::move(*this);
@@ -327,7 +327,7 @@ class ISLEntry {
     }
   }
 
-  ISLEntry Pop() {
+  OAHEntry Pop() {
     if (IsVector()) {
       auto& arr = AsVector();
       for (auto& e : arr) {

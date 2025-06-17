@@ -10,26 +10,23 @@
 #include <vector>
 
 #include "base/pmr/memory_resource.h"
-#include "intrusive_string_list.h"
+#include "oah_entry.h"
 
 namespace dfly {
 
-// NOTE: do not change the ABI of ISLEntry struct as long as we support
-// --stringset_experimental=false
-
-class IntrusiveStringSet {
-  using Buckets = std::vector<ISLEntry, PMR_NS::polymorphic_allocator<ISLEntry>>;
+class OAHSet {  // Open Addressing Hash Set
+  using Buckets = std::vector<OAHEntry, PMR_NS::polymorphic_allocator<OAHEntry>>;
 
  public:
   class iterator {
    public:
     using iterator_category = std::forward_iterator_tag;
     using difference_type = std::ptrdiff_t;
-    using value_type = ISLEntry;
-    using pointer = ISLEntry*;
-    using reference = ISLEntry&;
+    using value_type = OAHEntry;
+    using pointer = OAHEntry*;
+    using reference = OAHEntry&;
 
-    iterator(IntrusiveStringSet* owner, uint32_t bucket_id, uint32_t pos_in_bucket)
+    iterator(OAHSet* owner, uint32_t bucket_id, uint32_t pos_in_bucket)
         : owner_(owner), bucket_(bucket_id), pos_(pos_in_bucket) {
       // TODO rewrite, it's inefficient
       SetEntryIt();
@@ -94,7 +91,7 @@ class IntrusiveStringSet {
     }
 
    private:
-    IntrusiveStringSet* owner_;
+    OAHSet* owner_;
     uint32_t bucket_;
     uint32_t pos_;
   };
@@ -107,8 +104,7 @@ class IntrusiveStringSet {
     return iterator(nullptr, 0, 0);
   }
 
-  explicit IntrusiveStringSet(PMR_NS::memory_resource* mr = PMR_NS::get_default_resource())
-      : entries_(mr) {
+  explicit OAHSet(PMR_NS::memory_resource* mr = PMR_NS::get_default_resource()) : entries_(mr) {
   }
 
   static constexpr uint32_t kMaxBatchLen = 32;
@@ -122,10 +118,6 @@ class IntrusiveStringSet {
 
     // TODO FindInternal and FindEmptyAround can be one function to get better performance
     if (auto item = FindInternal(bucket_id, str, hash); item != end()) {
-      // Update ttl if found
-      // if (!keepttl) {
-      //   item->SetExpiryTime(EntryTTL(ttl_sec) /*, &entries_[item.second].obj_malloc_used_*/);
-      // }
       return false;
     }
 
@@ -157,8 +149,8 @@ class IntrusiveStringSet {
                      uint32_t ttl_sec = UINT32_MAX) {
     ++size_;
     uint32_t at = EntryTTL(ttl_sec);
-    uint32_t pos = entries_[bucket].Insert(ISLEntry(str, at));
-    entries_[bucket][pos].SetExtendedHash(hash, capacity_log_, kShiftLog);
+    uint32_t pos = entries_[bucket].Insert(OAHEntry(str, at));
+    entries_[bucket][pos].SetHash(hash, capacity_log_, kShiftLog);
     return iterator(this, bucket, pos);
   }
 
@@ -173,8 +165,8 @@ class IntrusiveStringSet {
     return res;
   }
 
-  // TODO: Consider using chunks for this as string set
-  void Fill(IntrusiveStringSet* other) {
+  // TODO: Consider using chunks for this as in StringSet
+  void Fill(OAHSet* other) {
     DCHECK(other->entries_.empty());
     other->Reserve(UpperBoundSize());
     other->set_time(time_now());
@@ -200,7 +192,6 @@ class IntrusiveStringSet {
 
   using ItemCb = std::function<void(std::string_view)>;
 
-  // TODO fix with CheckExtendedHash
   uint32_t Scan(uint32_t cursor, const ItemCb& cb) {
     const uint32_t capacity_mask = Capacity() - 1;
     uint32_t bucket_id = cursor >> (32 - capacity_log_);
@@ -224,7 +215,7 @@ class IntrusiveStringSet {
     return bucket_id << (32 - capacity_log_);
   }
 
-  ISLEntry Pop() {
+  OAHEntry Pop() {
     for (auto& bucket : entries_) {
       if (auto res = bucket.Pop(); !res.Empty()) {
         --size_;
@@ -242,7 +233,7 @@ class IntrusiveStringSet {
     auto bucket_id = BucketId(hash, capacity_log_);
     auto item = FindInternal(bucket_id, str, hash);
     if (item != end()) {
-      *item = ISLEntry();
+      *item = OAHEntry();
       return true;
     }
     return false;
@@ -290,15 +281,14 @@ class IntrusiveStringSet {
   }
 
   size_t ObjMallocUsed() const {
-    size_t bucket_obj_memory = 0;
-    // for (const auto& bucket : entries_) {
-    //   bucket_obj_memory += bucket.ObjMallocUsed();
-    // }
-    return bucket_obj_memory;
+    // TODO implement
+    LOG(FATAL) << "ExpirationUsed() isn't implemented";
+    return 0;
   }
 
   size_t SetMallocUsed() const {
-    // return entries_.capacity() * sizeof(ISLEntry);
+    // TODO implement
+    LOG(FATAL) << "ExpirationUsed() isn't implemented";
     return 0;
   }
 
@@ -349,10 +339,7 @@ class IntrusiveStringSet {
       const uint32_t bucket_id = (bid + i) & capacity_mask;
       if (entries_[bucket_id].Empty())
         return bucket_id;
-      // it->ExpireIfNeeded(time_now_, &size_);
-      // if (it->Empty()) {
-      //   return it;
-      // }
+      // TODO add expiration logic
     }
 
     DCHECK(Capacity() > kDisplacementSize);

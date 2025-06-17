@@ -2,7 +2,7 @@
 // See LICENSE for licensing terms.
 //
 
-#include "core/intrusive_string_set.h"
+#include "core/oah_set.h"
 
 #include <absl/strings/match.h>
 #include <absl/strings/str_cat.h>
@@ -49,7 +49,7 @@ class ISSAllocator : public PMR_NS::memory_resource {
   size_t alloced_ = 0;
 };
 
-class IntrusiveStringSetTest : public ::testing::Test {
+class OAHSetTest : public ::testing::Test {
  protected:
   static void SetUpTestSuite() {
     auto* tlh = mi_heap_get_backing();
@@ -60,7 +60,7 @@ class IntrusiveStringSetTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    ss_ = new IntrusiveStringSet(&alloc_);
+    ss_ = new OAHSet(&alloc_);
     generator_.seed(0);
   }
 
@@ -72,7 +72,7 @@ class IntrusiveStringSetTest : public ::testing::Test {
     EXPECT_EQ(zmalloc_used_memory_tl, 0);
   }
 
-  IntrusiveStringSet* ss_;
+  OAHSet* ss_;
   ISSAllocator alloc_;
   mt19937 generator_;
 };
@@ -89,21 +89,21 @@ static string random_string(mt19937& rand, unsigned len) {
   return ret;
 }
 
-TEST_F(IntrusiveStringSetTest, ISLEntryTest) {
-  ISLEntry test("0123456789", 2);
+TEST_F(OAHSetTest, OAHEntryTest) {
+  OAHEntry test("0123456789", 2);
 
   EXPECT_EQ(test.Key(), "0123456789"sv);
   EXPECT_EQ(test.GetExpiry(), 2);
 
-  ISLEntry first("123456789");
-  first.SetExtendedHash(Hash(first.Key()), 4, 4);
+  OAHEntry first("123456789");
+  first.SetHash(Hash(first.Key()), 4, 4);
 
   test.Insert(std::move(first));
 
   uint32_t set_size = 4;
   EXPECT_EQ(test.Find("123456789", Hash("123456789"), 4, 4, &set_size), 1);
 
-  test.Insert(ISLEntry("23456789"));
+  test.Insert(OAHEntry("23456789"));
 
   EXPECT_TRUE(test.Remove(0));
   EXPECT_FALSE(test.Remove(0));
@@ -112,31 +112,31 @@ TEST_F(IntrusiveStringSetTest, ISLEntryTest) {
   EXPECT_EQ(test.Pop().Key(), "123456789");
 }
 
-TEST_F(IntrusiveStringSetTest, HashCheckTest) {
-  ISLEntry isl;
+TEST_F(OAHSetTest, HashCheckTest) {
+  OAHEntry isl;
   {
-    uint32_t pos = isl.Insert(ISLEntry("0123456789"));
-    isl[pos].SetExtendedHash(Hash(isl[pos].Key()), 3, 4);
+    uint32_t pos = isl.Insert(OAHEntry("0123456789"));
+    isl[pos].SetHash(Hash(isl[pos].Key()), 3, 4);
     EXPECT_TRUE(isl[pos].CheckBucketAffiliation(4, 3, 4));
     EXPECT_FALSE(isl[pos].CheckBucketAffiliation(6, 3, 4));
     EXPECT_TRUE(isl[pos].CheckBucketAffiliation(4, 4, 3));
     EXPECT_FALSE(isl[pos].CheckBucketAffiliation(6, 4, 3));
   }
   {
-    uint32_t pos = isl.Insert(ISLEntry("123456789"));
-    isl[pos].SetExtendedHash(Hash(isl[pos].Key()), 3, 4);
+    uint32_t pos = isl.Insert(OAHEntry("123456789"));
+    isl[pos].SetHash(Hash(isl[pos].Key()), 3, 4);
   }
   {
-    uint32_t pos = isl.Insert(ISLEntry("23456789"));
-    isl[pos].SetExtendedHash(Hash(isl[pos].Key()), 3, 4);
+    uint32_t pos = isl.Insert(OAHEntry("23456789"));
+    isl[pos].SetHash(Hash(isl[pos].Key()), 3, 4);
   }
   {
-    uint32_t pos = isl.Insert(ISLEntry("3456789"));
-    isl[pos].SetExtendedHash(Hash(isl[pos].Key()), 3, 4);
+    uint32_t pos = isl.Insert(OAHEntry("3456789"));
+    isl[pos].SetHash(Hash(isl[pos].Key()), 3, 4);
   }
   {
-    uint32_t pos = isl.Insert(ISLEntry("456789"));
-    isl[pos].SetExtendedHash(Hash(isl[pos].Key()), 3, 4);
+    uint32_t pos = isl.Insert(OAHEntry("456789"));
+    isl[pos].SetHash(Hash(isl[pos].Key()), 3, 4);
   }
 
   uint32_t num_expired_fields = 0;
@@ -150,11 +150,11 @@ TEST_F(IntrusiveStringSetTest, HashCheckTest) {
   auto idx = isl.Find("456789", Hash("456789"), 3, 4, &num_expired_fields);
   auto new_pos = isl[*idx].Rehash(7, 3, 4, 4);
   EXPECT_EQ(new_pos, 6);
-  EXPECT_FALSE(isl[*idx].GetExtendedHash());
+  EXPECT_FALSE(isl[*idx].GetHash());
 }
 
-TEST_F(IntrusiveStringSetTest, IntrusiveStringSetAddFindTest) {
-  IntrusiveStringSet ss;
+TEST_F(OAHSetTest, OAHSetAddFindTest) {
+  OAHSet ss;
   std::set<std::string> test_set;
 
   for (int i = 0; i < 10000; ++i) {
@@ -173,7 +173,7 @@ TEST_F(IntrusiveStringSetTest, IntrusiveStringSetAddFindTest) {
   EXPECT_EQ(ss.Capacity(), 16384);
 }
 
-TEST_F(IntrusiveStringSetTest, Basic) {
+TEST_F(OAHSetTest, Basic) {
   EXPECT_TRUE(ss_->Add("foo"sv));
   EXPECT_TRUE(ss_->Add("bar"sv));
   uint32_t size = ss_->UpperBoundSize();
@@ -185,7 +185,7 @@ TEST_F(IntrusiveStringSetTest, Basic) {
   EXPECT_EQ(2, ss_->UpperBoundSize());
 }
 
-TEST_F(IntrusiveStringSetTest, StandardAddErase) {
+TEST_F(OAHSetTest, StandardAddErase) {
   EXPECT_TRUE(ss_->Add("@@@@@@@@@@@@@@@@") != ss_->end());
   EXPECT_TRUE(ss_->Add("A@@@@@@@@@@@@@@@") != ss_->end());
   EXPECT_TRUE(ss_->Add("AA@@@@@@@@@@@@@@") != ss_->end());
@@ -212,7 +212,7 @@ TEST_F(IntrusiveStringSetTest, StandardAddErase) {
   EXPECT_TRUE(ss_->Erase("AAAAAAAAAAAAAAA@"));
 }
 
-TEST_F(IntrusiveStringSetTest, DisplacedBug) {
+TEST_F(OAHSetTest, DisplacedBug) {
   string_view vals[] = {"imY", "OVl", "NhH", "BCe", "YDL", "lpb",
                         "nhF", "xod", "zYR", "PSa", "hce", "cTR"};
   ss_->AddMany(absl::MakeSpan(vals), UINT32_MAX);
@@ -264,7 +264,7 @@ TEST_F(IntrusiveStringSetTest, DisplacedBug) {
   ss_->Add("HPq");
 }
 
-TEST_F(IntrusiveStringSetTest, Resizing) {
+TEST_F(OAHSetTest, Resizing) {
   constexpr size_t num_strs = 4096;
   unordered_set<string> strs;
   while (strs.size() != num_strs) {
@@ -293,7 +293,7 @@ TEST_F(IntrusiveStringSetTest, Resizing) {
   }
 }
 
-TEST_F(IntrusiveStringSetTest, SimpleScan) {
+TEST_F(OAHSetTest, SimpleScan) {
   unordered_set<string_view> info = {"foo", "bar"};
   unordered_set<string_view> seen;
 
@@ -314,7 +314,7 @@ TEST_F(IntrusiveStringSetTest, SimpleScan) {
 }
 
 // // Ensure REDIS scan guarantees are met
-TEST_F(IntrusiveStringSetTest, ScanGuarantees) {
+TEST_F(OAHSetTest, ScanGuarantees) {
   unordered_set<string_view> to_be_seen = {"foo", "bar"};
   unordered_set<string_view> not_be_seen = {"AAA", "BBB"};
   unordered_set<string_view> maybe_seen = {"AA@@@@@@@@@@@@@@", "AAA@@@@@@@@@@@@@",
@@ -357,7 +357,7 @@ TEST_F(IntrusiveStringSetTest, ScanGuarantees) {
   EXPECT_TRUE(seen.size() == to_be_seen.size());
 }
 
-TEST_F(IntrusiveStringSetTest, IntOnly) {
+TEST_F(OAHSetTest, IntOnly) {
   constexpr size_t num_ints = 8192;
   unordered_set<unsigned int> numbers;
   for (size_t i = 0; i < num_ints; ++i) {
@@ -410,7 +410,7 @@ TEST_F(IntrusiveStringSetTest, IntOnly) {
   EXPECT_GE(expected_seen + removed.size(), num_ints);
 }
 
-TEST_F(IntrusiveStringSetTest, XtremeScanGrow) {
+TEST_F(OAHSetTest, XtremeScanGrow) {
   unordered_set<string> to_see, force_grow, seen;
 
   while (to_see.size() != 8) {
@@ -452,7 +452,7 @@ TEST_F(IntrusiveStringSetTest, XtremeScanGrow) {
   EXPECT_EQ(seen.size(), to_see.size());
 }
 
-TEST_F(IntrusiveStringSetTest, Pop) {
+TEST_F(OAHSetTest, Pop) {
   constexpr size_t num_items = 8;
   unordered_set<string> to_insert;
 
@@ -480,7 +480,7 @@ TEST_F(IntrusiveStringSetTest, Pop) {
   DCHECK(to_insert.empty());
 }
 
-TEST_F(IntrusiveStringSetTest, Iteration) {
+TEST_F(OAHSetTest, Iteration) {
   ss_->Add("foo");
   for (const auto& ptr : *ss_) {
     LOG(INFO) << ptr;
@@ -508,7 +508,7 @@ TEST_F(IntrusiveStringSetTest, Iteration) {
   EXPECT_EQ(to_insert.size(), 0);
 }
 
-TEST_F(IntrusiveStringSetTest, SetFieldExpireHasExpiry) {
+TEST_F(OAHSetTest, SetFieldExpireHasExpiry) {
   EXPECT_TRUE(ss_->Add("k1", 100));
   auto k = ss_->Find("k1");
   EXPECT_TRUE(k.HasExpiry());
@@ -519,7 +519,7 @@ TEST_F(IntrusiveStringSetTest, SetFieldExpireHasExpiry) {
   EXPECT_EQ(k.ExpiryTime(), 1);
 }
 
-TEST_F(IntrusiveStringSetTest, SetFieldExpireNoHasExpiry) {
+TEST_F(OAHSetTest, SetFieldExpireNoHasExpiry) {
   EXPECT_TRUE(ss_->Add("k1"));
   auto k = ss_->Find("k1");
   EXPECT_FALSE(k.HasExpiry());
@@ -529,7 +529,7 @@ TEST_F(IntrusiveStringSetTest, SetFieldExpireNoHasExpiry) {
   EXPECT_EQ(k.ExpiryTime(), 10);
 }
 
-TEST_F(IntrusiveStringSetTest, Ttl) {
+TEST_F(OAHSetTest, Ttl) {
   EXPECT_TRUE(ss_->Add("bla"sv, 1));
   EXPECT_FALSE(ss_->Add("bla"sv, 1));
   auto it = ss_->Find("bla"sv);
@@ -568,7 +568,7 @@ TEST_F(IntrusiveStringSetTest, Ttl) {
   }
 }
 
-TEST_F(IntrusiveStringSetTest, Grow) {
+TEST_F(OAHSetTest, Grow) {
   for (size_t j = 0; j < 10; ++j) {
     for (size_t i = 0; i < 4098; ++i) {
       ss_->Reserve(generator_() % 256);
@@ -579,7 +579,7 @@ TEST_F(IntrusiveStringSetTest, Grow) {
   }
 }
 
-TEST_F(IntrusiveStringSetTest, Reserve) {
+TEST_F(OAHSetTest, Reserve) {
   vector<string> strs;
 
   for (size_t i = 0; i < 10; ++i) {
@@ -595,11 +595,11 @@ TEST_F(IntrusiveStringSetTest, Reserve) {
   }
 }
 
-TEST_F(IntrusiveStringSetTest, Fill) {
+TEST_F(OAHSetTest, Fill) {
   for (size_t i = 0; i < 100; ++i) {
     ss_->Add(random_string(generator_, 10));
   }
-  IntrusiveStringSet s2;
+  OAHSet s2;
   ss_->Fill(&s2);
   EXPECT_EQ(s2.UpperBoundSize(), ss_->UpperBoundSize());
   for (const auto& s : *ss_) {
@@ -607,21 +607,21 @@ TEST_F(IntrusiveStringSetTest, Fill) {
   }
 }
 
-TEST_F(IntrusiveStringSetTest, IterateEmpty) {
+TEST_F(OAHSetTest, IterateEmpty) {
   for (const auto& s : *ss_) {
     // We're iterating to make sure there is no crash. However, if we got here, it's a bug
     CHECK(false) << "Found entry " << s << " in empty set";
   }
 }
 
-// size_t memUsed(IntrusiveStringSet& obj) {
+// size_t memUsed(OAHSet& obj) {
 //   return obj.ObjMallocUsed() + obj.SetMallocUsed();
 // }
 
 void BM_Clone(benchmark::State& state) {
   vector<string> strs;
   mt19937 generator(0);
-  IntrusiveStringSet ss1, ss2;
+  OAHSet ss1, ss2;
   unsigned elems = state.range(0);
   for (size_t i = 0; i < elems; ++i) {
     string str = random_string(generator, 10);
@@ -644,7 +644,7 @@ void BM_Fill(benchmark::State& state) {
   unsigned elems = state.range(0);
   vector<string> strs;
   mt19937 generator(0);
-  IntrusiveStringSet ss1, ss2;
+  OAHSet ss1, ss2;
   for (size_t i = 0; i < elems; ++i) {
     string str = random_string(generator, 10);
     ss1.Add(str);
@@ -662,7 +662,7 @@ BENCHMARK(BM_Fill)->ArgName("elements")->Arg(32000);
 void BM_Clear(benchmark::State& state) {
   unsigned elems = state.range(0);
   mt19937 generator(0);
-  IntrusiveStringSet ss;
+  OAHSet ss;
   while (state.KeepRunning()) {
     state.PauseTiming();
     for (size_t i = 0; i < elems; ++i) {
@@ -678,7 +678,7 @@ BENCHMARK(BM_Clear)->ArgName("elements")->Arg(32000);
 void BM_Add(benchmark::State& state) {
   vector<string> strs;
   mt19937 generator(0);
-  IntrusiveStringSet ss;
+  OAHSet ss;
   unsigned elems = state.range(0);
   unsigned keySize = state.range(1);
   for (size_t i = 0; i < elems; ++i) {
@@ -703,7 +703,7 @@ BENCHMARK(BM_Add)
 void BM_AddMany(benchmark::State& state) {
   vector<string> strs;
   mt19937 generator(0);
-  IntrusiveStringSet ss;
+  OAHSet ss;
   unsigned elems = state.range(0);
   unsigned keySize = state.range(1);
   for (size_t i = 0; i < elems; ++i) {
@@ -732,7 +732,7 @@ BENCHMARK(BM_AddMany)
 void BM_Erase(benchmark::State& state) {
   std::vector<std::string> strs;
   mt19937 generator(0);
-  IntrusiveStringSet ss;
+  OAHSet ss;
   auto elems = state.range(0);
   auto keySize = state.range(1);
   for (long int i = 0; i < elems; ++i) {
@@ -760,7 +760,7 @@ BENCHMARK(BM_Erase)
 void BM_Get(benchmark::State& state) {
   std::vector<std::string> strs;
   mt19937 generator(0);
-  IntrusiveStringSet ss;
+  OAHSet ss;
   auto elems = state.range(0);
   auto keySize = state.range(1);
   for (long int i = 0; i < elems; ++i) {
@@ -781,7 +781,7 @@ BENCHMARK(BM_Get)
 void BM_Grow(benchmark::State& state) {
   vector<string> strs;
   mt19937 generator(0);
-  IntrusiveStringSet src;
+  OAHSet src;
   unsigned elems = 1 << 18;
   for (size_t i = 0; i < elems; ++i) {
     src.Add(random_string(generator, 16), UINT32_MAX);
@@ -790,7 +790,7 @@ void BM_Grow(benchmark::State& state) {
 
   while (state.KeepRunning()) {
     state.PauseTiming();
-    IntrusiveStringSet tmp;
+    OAHSet tmp;
     src.Fill(&tmp);
     CHECK_EQ(tmp.Capacity(), elems);
     state.ResumeTiming();
@@ -808,7 +808,7 @@ BENCHMARK(BM_Grow);
 
 // unsigned total_wasted_memory = 0;
 
-// TEST_F(IntrusiveStringSetTest, ReallocIfNeeded) {
+// TEST_F(OAHSetTest, ReallocIfNeeded) {
 //   auto build_str = [](size_t i) { return to_string(i) + string(131, 'a'); };
 
 //   auto count_waste = [](const mi_heap_t* heap, const mi_heap_area_t* area, void* block,
