@@ -1356,6 +1356,8 @@ void Segment<Key, Value, Policy>::Split(HFunc&& hfn, Segment* dest_right, MoveCb
       assert(!bucket_[i].HasStash());
     }
   }
+  LOG(INFO) << "Splitting segment " << segment_id_ << " capacity: " << capacity()
+            << " empty stashes: " << empty_stashes;
 }
 
 template <typename Key, typename Value, typename Policy>
@@ -1455,6 +1457,7 @@ auto Segment<Key, Value, Policy>::InsertUniq(U&& key, V&& value, Hash_t key_hash
     for (unsigned i = 0; i < kStashBucketNum; ++i) {
       pa.construct(&stash_buckets_[i]);
     }
+    LOG(INFO) << "Adding stash buckets to segment, size " << SlowSize();
   }
 
   // we balance stash fill rate  by starting from y % STASH_BUCKET_NUM.
@@ -1522,7 +1525,7 @@ std::enable_if_t<UV, unsigned> Segment<Key, Value, Policy>::CVCOnInsert(uint64_t
     return 0;
   }
 
-  // Important to repeat exactly the insertion logic of InsertUniq.
+  // Important to repeat exactly the insertion logic of InsertUnique.
   for (unsigned i = 0; i < kStashBucketNum; ++i) {
     unsigned stash_pos = (bid + i) % kStashBucketNum;
     const Bucket& stash = stash_buckets_[stash_pos];
