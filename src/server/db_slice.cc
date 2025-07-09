@@ -708,7 +708,7 @@ OpResult<DbSlice::ItAndUpdater> DbSlice::AddOrFindInternal(const Context& cntx, 
 
   // Fast-path if change_cb_ is empty so we Find or Add using
   // the insert operation: twice more efficient.
-  CompactObj co_key{key};
+  CompactObj co_key{key, true};
   PrimeIterator it;
 
   ssize_t table_before = db.prime.mem_usage();

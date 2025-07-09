@@ -160,8 +160,8 @@ class CompactObj {
   CompactObj() {  // By default - empty string.
   }
 
-  explicit CompactObj(std::string_view str) {
-    SetString(str);
+  explicit CompactObj(std::string_view str, bool is_key) {
+    SetString(str, is_key);
   }
 
   CompactObj(CompactObj&& cs) noexcept {
@@ -299,7 +299,7 @@ class CompactObj {
   }
 
   // For STR object.
-  void SetString(std::string_view str);
+  void SetString(std::string_view str, bool is_key);
   void GetString(std::string* res) const;
 
   void ReserveString(size_t size);
