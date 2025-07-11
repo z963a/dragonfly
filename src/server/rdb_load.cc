@@ -848,7 +848,7 @@ void RdbLoaderBase::OpaqueObjLoader::HandleBlob(string_view blob) {
       pv_->ReserveString(config_.reserve);
       pv_->AppendString(blob);
     } else {
-      pv_->SetString(blob);
+      pv_->SetString(blob, false);
     }
     return;
   }
