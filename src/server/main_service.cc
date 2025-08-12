@@ -113,7 +113,7 @@ ABSL_RETIRED_FLAG(
     "memory is above this value");
 
 ABSL_FLAG(uint32_t, max_busy_squash_usec, 1000,
-          "Maximum time in microseconds to execute squashed commands before yielding.");
+          "Maximum time in microseconds to execute squashed commands before fing.");
 ABSL_FLAG(uint32_t, shard_thread_busy_polling_usec, 0,
           "If non-zero, overrides the busy polling parameter for shard threads.");
 
@@ -134,6 +134,9 @@ ABSL_FLAG(uint32_t, uring_submit_threshold, 1u << 31, "");
 
 ABSL_FLAG(uint32_t, squash_stats_latency_lower_limit, 0,
           "If set, will not track latency stats below this threshold (usec). ");
+
+ABSL_FLAG(uint32_t, sched_budget_background_fib, 50'000, "Nanosecond budget of background fibers");
+ABSL_FLAG(uint32_t, sched_background_sleep_freq, 10, "Sleep frequency of background fibers");
 
 namespace dfly {
 
@@ -742,6 +745,16 @@ void UpdateUringFlagsOnThread() {
 #endif
 }
 
+thread_local fb2::detail::Scheduler* scheduler_thread_local = nullptr;
+void UpdateSchedulerFlagsOnThread() {
+  using fb2::detail::Scheduler;
+  auto* sched = scheduler_thread_local;
+  sched->UpdateConfig(&Scheduler::Config::budget_background_fib,
+                      GetFlag(FLAGS_sched_budget_background_fib));
+  sched->UpdateConfig(&Scheduler::Config::background_sleep_freq,
+                      GetFlag(FLAGS_sched_background_sleep_freq));
+}
+
 void SetHuffmanTable(const std::string& huffman_table) {
   if (huffman_table.empty())
     return;
@@ -873,6 +886,12 @@ void Service::Init(util::AcceptServer* acceptor, std::vector<facade::Listener*> 
                        facade::GetFlagNames(FLAGS_uring_wake_mode, FLAGS_uring_submit_threshold),
                        []() { UpdateUringFlagsOnThread(); });
 
+  // Register scheduler flags
+  RegisterMutableFlags(
+      &config_registry,
+      facade::GetFlagNames(FLAGS_sched_background_sleep_freq, FLAGS_sched_budget_background_fib),
+      []() { UpdateSchedulerFlagsOnThread(); });
+
   config_registry.RegisterSetter<MemoryBytesFlag>("maxmemory", [](const MemoryBytesFlag& flag) {
     // TODO: reduce code reliance on constant direct access of max_memory_limit
     max_memory_limit.store(flag.value, memory_order_relaxed);
@@ -950,6 +969,10 @@ void Service::Init(util::AcceptServer* acceptor, std::vector<facade::Listener*> 
   shard_set->pool()->AwaitBrief([](unsigned, auto*) {
     UpdateFromFlagsOnThread();
     UpdateUringFlagsOnThread();
+  });
+  shard_set->pool()->AwaitFiberOnAll([](unsigned, auto*) {
+    scheduler_thread_local = fb2::detail::FiberActive()->scheduler();
+    UpdateSchedulerFlagsOnThread();
   });
   SetHuffmanTable(GetFlag(FLAGS_huffman_table));
 
