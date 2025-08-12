@@ -753,6 +753,7 @@ void UpdateSchedulerFlagsOnThread() {
                       GetFlag(FLAGS_sched_budget_background_fib));
   sched->UpdateConfig(&Scheduler::Config::background_sleep_freq,
                       GetFlag(FLAGS_sched_background_sleep_freq));
+  sched->UpdateConfig(&Scheduler::Config::background_warrant_pct, 0);
 }
 
 void SetHuffmanTable(const std::string& huffman_table) {
@@ -866,6 +867,9 @@ void Service::Init(util::AcceptServer* acceptor, std::vector<facade::Listener*> 
   config_registry.RegisterMutable("pipeline_squash");
   config_registry.RegisterMutable("lua_mem_gc_threshold");
 
+  config_registry.RegisterMutable("background_snapshotting");
+  config_registry.RegisterMutable("background_heartbeat");
+
   // Register ServerState flags
   RegisterMutableFlags(&config_registry, ServerState::GetMutableFlagNames(),
                        []() { ServerState::tlocal()->UpdateFromFlags(); });
@@ -898,7 +902,6 @@ void Service::Init(util::AcceptServer* acceptor, std::vector<facade::Listener*> 
   });
 
   config_registry.RegisterMutable("replica_partial_sync");
-  config_registry.RegisterMutable("background_snapshotting");
   config_registry.RegisterMutable("replication_timeout");
   config_registry.RegisterMutable("migration_finalization_timeout_ms");
   config_registry.RegisterMutable("table_growth_margin");

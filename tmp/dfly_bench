@@ -1,0 +1,2 @@
+#!/usr/bin/sh
+../build-opt/dfly_bench -p 6380 "$@"
