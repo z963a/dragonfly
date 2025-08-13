@@ -53,7 +53,7 @@ def run_replication(measure_time=10):
     r2.flushall()
     time.sleep(0.5)
 
-    print(f"  took: {took}, latency: {latency}")
+    print(f"  took: {took}, latency: {latency}, measure_time: {measure_time}")
     return (took, latency)
 
 
@@ -71,47 +71,43 @@ def run(times=2):
     return (total_took / times, total_latency / times)
 
 
-def run_old():
+def run_old(times=5):
     print(f">> OLD")
     r1.execute_command("CONFIG", "SET", "background_snapshotting", "false")
-    r1.execute_command("CONFIG", "SET", "background_heartbeat", "false")
-    return run()
+    return run(times=times)
 
 
 def run_new(budget_us, sleep_freq):
     print(f">> budget: {budget_us}, sleep_freq: {sleep_freq}")
     r1.execute_command("CONFIG", "SET", "background_snapshotting", "true")
-    r1.execute_command("CONFIG", "SET", "background_heartbeat", "true")
     r1.execute_command("CONFIG", "SET", "sched_budget_background_fib", budget_us * 1000)
     r1.execute_command("CONFIG", "SET", "sched_background_sleep_freq", sleep_freq)
-    return run()
+    return run(times=2)
 
 
 BASE_KEYC = 50_000
-DATA_SIZES = [50, 100, 1000, 2000, 10_0000]
 BUDGETS = [1, 3, 5, 10, 50, 100]
 SLEEP_FREQS = [10, 30, 50, 80]
 
-data_points = [list() for _ in DATA_SIZES]
+data_points = []
+data_size = int(sys.argv[1])
 
 
 def save():
-    with open("data-points.json", "w") as f:
+    with open(f"data-points-{data_size}.json", "w") as f:
         json.dump(data_points, f)
         f.flush()
 
 
-for data_i, data_size in enumerate(DATA_SIZES):
-    flush_and_fill(int(BASE_KEYC * (200 / data_size**0.5)), data_size)
+flush_and_fill(int(BASE_KEYC * (200 / data_size**0.5)), data_size)
 
-    took, latency = run_old()
-    data_points[data_i].append((latency, took, ()))
+took, latency = run_old()
+data_points.append((latency, took, ()))
 
-    for budget in BUDGETS:
-        for sleep_freq in SLEEP_FREQS:
-            took, latency = run_new(budget, sleep_freq)
-            data_points[data_i].append((latency, took, (budget, sleep_freq)))
+for budget in BUDGETS:
+    for sleep_freq in SLEEP_FREQS:
+        took, latency = run_new(budget, sleep_freq)
+        data_points.append((latency, took, (budget, sleep_freq)))
 
-        save()
-
+    save()
 f.close()
