@@ -230,7 +230,7 @@ bool EngineShard::DefragTaskState::CheckRequired() {
                                           GetFlag(FLAGS_eviction_memory_budget_threshold) -
                                           EvictionTaskState::kDefragRssMemoryDelta);
 
-  const std::size_t global_threshold = max_memory_limit * defrag_threshold;
+  const std::size_t global_threshold = limit * defrag_threshold;
   if (global_threshold > rss_mem_current.load(memory_order_relaxed)) {
     return false;
   }
@@ -734,14 +734,15 @@ size_t EngineShard::CalculateEvictionBytes() {
   const size_t shards_count = shard_set->size();
   const double eviction_memory_budget_threshold = GetFlag(FLAGS_eviction_memory_budget_threshold);
 
+  size_t limit = max_memory_limit.load(memory_order_relaxed);
   const size_t shard_memory_budget_threshold =
-      size_t(max_memory_limit * eviction_memory_budget_threshold) / shards_count;
+      size_t(limit * eviction_memory_budget_threshold) / shards_count;
 
   const size_t global_used_memory = used_mem_current.load(memory_order_relaxed);
 
   // Calculate how many bytes we need to evict on this shard
-  size_t goal_bytes = CalculateHowManyBytesToEvictOnShard(max_memory_limit, global_used_memory,
-                                                          shard_memory_budget_threshold);
+  size_t goal_bytes =
+      CalculateHowManyBytesToEvictOnShard(limit, global_used_memory, shard_memory_budget_threshold);
 
   VLOG_IF_EVERY_N(1, goal_bytes > 0, 50)
       << "Memory goal bytes: " << goal_bytes << ", used memory: " << global_used_memory
